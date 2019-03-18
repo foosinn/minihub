@@ -45,16 +45,6 @@
                             <td>{{.Name}}</td>
                             <td><button class="btn btn-primary btn-sm" data-clipboard-text="{{$.Registry}}/{{$Name}}:{{.Name}}">Copy</button></td>
                         </tr>
-                        <tr class="detail">
-                            <td colspan="3">
-                                {{range .Info.FirstHistory.config.Env}}
-                                {{.}}<br>
-                                {{end}}
-                                {{range $key, $value := .Info.FirstHistory.config.Labels}}
-                                {{$key}} {{$value}}<br>
-                                {{end}}
-                            </td>
-                        </tr>
                         {{end}}
                         {{end}}
                     </tbody>
