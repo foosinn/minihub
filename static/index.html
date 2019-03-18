@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+
+    <head>
+        <title>Image Hub</title>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+        <link rel="stylesheet" href="/static/bootstrap.min.css">
+
+    </head>
+
+    <body>
+        <div class="container">
+            <div class="jumbotron">
+                <h1 class="display-4">Image Hub</h1>
+                <p>
+                    Image Hub on {{.Registry}}
+                </p>
+            </div>
+            <div class="rounded">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Image</th>
+                            <th>Tag</th>
+                            <th>Copy</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{range .Images}}
+                        {{$Name := .Name}}
+                        {{range .Tags}}
+                        <tr>
+                            {{$RepoURL := .Info.FirstHistory.config.Env | get "OPENSHIFT_BUILD_SOURCE" | replace "git@github.com:" "https://github.com/" | replace ".git" ""}}
+                            {{$Sha     := index .Info.FirstHistory.config.Labels "io.openshift.build.commit.id"}}
+                            <td>
+                                {{$Name}}<br>
+                                <p class="font-weight-lighter">
+                                    {{index .Info.FirstHistory.config.Labels "io.openshift.build.commit.date"}}<br>
+                                    <a href="{{$RepoURL}}/commit/{{$Sha}}">
+                                        {{$Sha}}
+                                    </a><br>
+                                </p>
+                            </td>
+                            <td>{{.Name}}</td>
+                            <td><button class="btn btn-primary btn-sm" data-clipboard-text="{{$.Registry}}/{{$Name}}:{{.Name}}">Copy</button></td>
+                        </tr>
+                        <tr class="detail">
+                            <td colspan="3">
+                                {{range .Info.FirstHistory.config.Env}}
+                                {{.}}<br>
+                                {{end}}
+                                {{range $key, $value := .Info.FirstHistory.config.Labels}}
+                                {{$key}} {{$value}}<br>
+                                {{end}}
+                            </td>
+                        </tr>
+                        {{end}}
+                        {{end}}
+                    </tbody>
+            </div>
+                </table>
+        </div>
+        <script src="/static/popper.min.js"></script>
+        <script src="/static/jquery.min.js"></script>
+        <script src="/static/bootstrap.min.js"></script>
+        <script src="/static/clipboard.min.js"></script>
+        <script>
+         new ClipboardJS('.btn');
+        </script>
+    </body>
+
+</html>
