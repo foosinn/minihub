@@ -148,6 +148,8 @@ func index(w http.ResponseWriter, r *http.Request) {
 			tag := templateTag{tagName, tagInfo}
 			image.Tags = append(image.Tags, tag)
 		}
+
+		image.Tags = tagLimitSort(image.Tags)
 		images = append(images, image)
 	}
 
@@ -160,4 +162,20 @@ func index(w http.ResponseWriter, r *http.Request) {
 		log.Println(err)
 		return
 	}
+}
+
+func tagLimitSort(tags []templateTag) []templateTag {
+	first := []templateTag{}
+	other := []templateTag{}
+	for _, t := range tags {
+		if t.Name == "latest" {
+			first = append(first, t)
+		} else {
+			other = append(other, t)
+		}
+	}
+	if len(other) > 4 {
+		other = other[:4]
+	}
+	return append(first, other...)
 }
