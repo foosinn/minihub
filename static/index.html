@@ -40,19 +40,11 @@
                                             style="width: 10em">
                                         {{.Name}}
                                     </button>
-                                    {{if index .Info.FirstHistory.config.Labels "io.openshift.s2i.build.source-location"}}
-                                    {{$RepoURL := index .Info.FirstHistory.config.Labels "io.openshift.s2i.build.source-location" | replace "git@github.com:" "https://github.com/" | replace ".git" ""}}
-                                    {{$Sha     := index .Info.FirstHistory.config.Labels "io.openshift.s2i.build.commit.id"}}
+                                    {{$RepoURL := .Info.Config.Labels.Repo | replace "git@github.com:" "https://github.com/" | replace ".git" ""}}
+                                    {{$Sha     := .Info.Config.Labels.Sha }}
                                     <a class="btn btn-warning btn-sm" href="{{$RepoURL}}/commit/{{$Sha}}" style="width: 7em">
                                         <i class="fab fa-github"></i> {{printf "%.6s" $Sha}}
                                     </a>
-                                    {{else if index .Info.FirstHistory.config.Labels "io.openshift.build.source-location"}}
-                                    {{$RepoURL := index .Info.FirstHistory.config.Labels "io.openshift.build.source-location" | replace "git@github.com:" "https://github.com/" | replace ".git" ""}}
-                                    {{$Sha     := index .Info.FirstHistory.config.Labels "io.openshift.build.commit.id"}}
-                                    <a class="btn btn-warning btn-sm" href="{{$RepoURL}}/commit/{{$Sha}}" style="width: 7em">
-                                        <i class="fab fa-github"></i> {{printf "%.6s" $Sha}}
-                                    </a>
-                                    {{end}}
                                     <button class="btn btn-primary btn-sm"
                                             data-clipboard-text="{{$.Registry}}/{{$Name}}:{{.Name}}"
                                             style="width: 2em">

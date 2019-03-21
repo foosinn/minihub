@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strings"
+	"time"
 
 	"encoding/json"
 	"html/template"
@@ -36,16 +38,30 @@ type (
 		Tag          string `json:"Tag"`
 		Architecture string `json:"architecture"`
 		History      []map[string]string
-		FirstHistory interface{}
+		FirstHistory registryInfo
+	}
+	registryInfo struct {
+		Config struct {
+			Env    []string
+			Labels struct {
+				Author     string `json:"io.openshift.s2i.build.commit.author"`
+				CommitDate string `json:"io.openshift.s2i.build.commit.date"`
+				Sha        string `json:"io.openshift.s2i.build.commit.id"`
+				Ref        string `json:"io.openshift.s2i.build.commit.ref"`
+				Repo       string `json:"io.openshift.s2i.build.source-location"`
+				Message    string `json:"io.openshift.s2i.build.commit.message"`
+				Image      string `json:"io.openshift.s2i.build.image"`
+			}
+		} `json:"config"`
 	}
 
 	templateTag struct {
-		Name string      `json:"name"`
-		Info interface{} `json:"info"`
+		Name string
+		Info registryInfo
 	}
 	templateImage struct {
-		Name string        `json:"name"`
-		Tags []templateTag `json:"tags"`
+		Name string
+		Tags []templateTag
 	}
 	templateData struct {
 		Registry string
@@ -70,7 +86,8 @@ func init() {
 
 	fm := template.FuncMap{
 		"replace": func(old string, new string, input string) string {
-			return strings.ReplaceAll(input, old, new)
+			result := strings.ReplaceAll(input, old, new)
+			return result
 		},
 		"get": func(field string, input []interface{}) string {
 			for _, i := range input {
@@ -145,7 +162,7 @@ func index(w http.ResponseWriter, r *http.Request) {
 			}
 			json.Unmarshal([]byte(tagInfo.History[0]["v1Compatibility"]), &tagInfo.FirstHistory)
 
-			tag := templateTag{tagName, tagInfo}
+			tag := templateTag{tagName, tagInfo.FirstHistory}
 			image.Tags = append(image.Tags, tag)
 		}
 
@@ -174,8 +191,13 @@ func tagLimitSort(tags []templateTag) []templateTag {
 			other = append(other, t)
 		}
 	}
+	sort.Slice(other, func(i int, j int) bool {
+		iTime, _ := time.Parse("Mon Jan 02 15:04:05 2006 -0700", other[i].Info.Config.Labels.CommitDate)
+		jTime, _ := time.Parse("Mon Jan 02 15:04:05 2006 -0700", other[j].Info.Config.Labels.CommitDate)
+		return iTime.Unix() > jTime.Unix()
+	})
 	if len(other) > 4 {
-		other = other[:4]
+		other = other[0:4]
 	}
 	return append(first, other...)
 }
