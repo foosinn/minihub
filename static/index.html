@@ -34,8 +34,14 @@
                             <td>
                                 {{$Name := .Name}}
                                 {{range .Tags}}
-                                {{$RepoURL := .Info.Config.Labels.Repo | replace "git@github.com:" "https://github.com/" | replace ".git" ""}}
+
                                 {{$Sha     := .Info.Config.Labels.Sha }}
+                                {{$RepoURL := "#"}}
+                                {{if not (.Info.Config.Labels.Repo | prefix "/") }}
+                                    {{$RepoURL := .Info.Config.Labels.Repo | replace "git@github.com:" "https://github.com/" | replace ".git" ""}}
+                                    {{$RepoURL := printf "%s/commit/%s" $RepoURL $Sha}}
+                                {{end}}
+
                                 <div class="btn-group" role="group" style="margin: 1px">
                                     <button class="btn btn-secondary btn-sm"
                                             style="width: 10em"
@@ -46,7 +52,7 @@
                                             aria-controls="#tag{{.Name}}{{$Sha}}Collapse">
                                         {{.Name}}
                                     </button>
-                                    <a class="btn btn-warning btn-sm" href="{{$RepoURL}}/commit/{{$Sha}}" style="width: 7em">
+                                    <a class="btn btn-warning btn-sm" href="{{$RepoURL}}" style="width: 7em">
                                         <i class="fab fa-github"></i> {{printf "%.6s" $Sha}}
                                     </a>
                                     <button class="btn btn-primary btn-sm"
