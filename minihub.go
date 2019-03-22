@@ -44,7 +44,6 @@ type (
 		Config struct {
 			Env    []string
 			Labels struct {
-				Author     string `json:"io.openshift.s2i.build.commit.author"`
 				CommitDate string `json:"io.openshift.s2i.build.commit.date"`
 				Sha        string `json:"io.openshift.s2i.build.commit.id"`
 				Ref        string `json:"io.openshift.s2i.build.commit.ref"`
@@ -98,6 +97,10 @@ func init() {
 				}
 			}
 			return ""
+		},
+		"json": func(v interface{}) string {
+			s, _ := json.MarshalIndent(v, "", "  ")
+			return string(s)
 		},
 	}
 	indexTemplate := template.Must(template.New("index.html").Funcs(fm).Parse(string(indexContent)))
