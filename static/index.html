@@ -17,6 +17,13 @@
                     Image Hub on {{.Registry}}
                 </p>
             </div>
+            <div>
+                {{range .Messages}}
+                <div class="alert alert-{{.Level}}" role="alert">
+                    {{.Message}}
+                </div>
+                {{end}}
+            </div>
             <div class="rounded">
                 <table class="table table-hover">
                     <thead>
@@ -27,6 +34,7 @@
                     </thead>
                     <tbody>
                         {{range .Images}}
+                        {{if (len .Tags) gt 0}}
                         <tr>
                             <td>
                                 {{.Name}}<br>
@@ -42,35 +50,47 @@
                                     {{$RepoURL := printf "%s/commit/%s" $RepoURL $Sha}}
                                 {{end}}
 
-                                <div class="btn-group" role="group" style="margin: 1px">
-                                    <button class="btn btn-secondary btn-sm"
-                                            style="width: 10em"
-                                            type="button"
-                                            data-toggle="collapse"
-                                            data-target="#tag{{.Name}}{{$Sha}}Collapse"
-                                            aria-expanded="false"
-                                            aria-controls="#tag{{.Name}}{{$Sha}}Collapse">
-                                        {{.Name}}
-                                    </button>
-                                    <a class="btn btn-warning btn-sm" href="{{$RepoURL}}" style="width: 7em">
-                                        <i class="fab fa-github"></i> {{printf "%.6s" $Sha}}
-                                    </a>
-                                    <button class="btn btn-primary btn-sm"
-                                            data-clipboard-text="{{$.Registry}}/{{$Name}}:{{.Name}}"
-                                            style="width: 2em">
-                                        <i class="far fa-copy"></i>
-                                    </button>
+                                <div clas="btn-toolbar" role="toolbar">
+                                    <div class="btn-group btn-group-inline" role="group" style="margin: 1px">
+                                        <button class="btn btn-secondary btn-sm"
+                                                style="width: 10em"
+                                                type="button"
+                                                data-toggle="collapse"
+                                                data-target="#tag{{.Name}}{{$Sha}}Collapse"
+                                                aria-expanded="false"
+                                                aria-controls="#tag{{.Name}}{{$Sha}}Collapse">
+                                            {{.Name}}
+                                        </button>
+                                        {{ if $Sha }}
+                                        <a class="btn btn-warning btn-sm" href="{{$RepoURL}}" style="width: 7em">
+                                            <i class="fab fa-github"></i> {{printf "%.6s" $Sha}}
+                                        </a>
+                                        {{ end }}
+                                        <button class="btn btn-primary btn-sm"
+                                                data-clipboard-text="{{$.Registry}}/{{$Name}}:{{.Name}}"
+                                                style="width: 2em">
+                                            <i class="far fa-copy"></i>
+                                        </button>
+                                    </div>
+                                    <div class="btn-group btn-group-inline" role="group" style="margin: 1px">
+                                        <form class="form-inline" method="post" action="/delete">
+                                            <input type="hidden" name="DockerContentDigest" value="{{.DockerContentDigest}}" />
+                                            <input type="hidden" name="Image" value="{{$Name}}" />
+                                            <input type="hidden" name="Tag" value="{{.Name}}" />
+                                            <button type="submit"
+                                                    class="btn btn-danger btn-sm"
+                                                    style="width: 2em">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </form>
+                                    </div>
                                 </div>
-                                <div class="collapse" >
-                                    <br>
-                                </div>
-                                <br>
                                 {{end}}
                             </td>
                         </tr>
                         {{range .Tags}}
                         <tr>
-                            {{$Sha     := .Info.Config.Labels.Sha }}
+                            {{$Sha := .Info.Config.Labels.Sha }}
                             <td colspan="2" class="collapse" id="tag{{.Name}}{{$Sha}}Collapse">
                                 <pre style="white-space: pre-wrap">
 {{.Info.Config|json}}
@@ -78,7 +98,8 @@
                             </td>
                         </tr>
                         {{end}}
-                        {{end}}
+                    {{end}}
+                    {{end}}
                     </tbody>
             </div>
                 </table>
@@ -92,5 +113,4 @@
          new ClipboardJS('.btn');
         </script>
     </body>
-
 </html>

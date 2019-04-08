@@ -6,6 +6,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"encoding/json"
@@ -17,7 +18,7 @@ import (
 	"github.com/rakyll/statik/fs"
 )
 
-var Config config
+var c config
 
 type (
 	config struct {
@@ -34,29 +35,37 @@ type (
 		Tags []string `json:"tags"`
 	}
 	registryTag struct {
-		Name         string `json:"Name"`
-		Tag          string `json:"Tag"`
-		Architecture string `json:"architecture"`
-		History      []map[string]string
-		FirstHistory registryInfo
+		Name                string `json:"Name"`
+		Tag                 string `json:"Tag"`
+		Architecture        string `json:"architecture"`
+		DockerContentDigest string
+		History             []map[string]string
+		FirstHistory        registryInfo
 	}
 	registryInfo struct {
 		Config struct {
+			//lint:ignore U1000 Json decode is not detected
 			Env    []string
 			Labels struct {
 				CommitDate string `json:"io.openshift.s2i.build.commit.date"`
-				Sha        string `json:"io.openshift.s2i.build.commit.id"`
-				Ref        string `json:"io.openshift.s2i.build.commit.ref"`
-				Repo       string `json:"io.openshift.s2i.build.source-location"`
-				Message    string `json:"io.openshift.s2i.build.commit.message"`
-				Image      string `json:"io.openshift.s2i.build.image"`
+				//lint:ignore U1000 Json decode is not detected
+				Sha string `json:"io.openshift.s2i.build.commit.id"`
+				//lint:ignore U1000 Json decode is not detected
+				Ref string `json:"io.openshift.s2i.build.commit.ref"`
+				//lint:ignore U1000 Json decode is not detected
+				Repo string `json:"io.openshift.s2i.build.source-location"`
+				//lint:ignore U1000 Json decode is not detected
+				Message string `json:"io.openshift.s2i.build.commit.message"`
+				//lint:ignore U1000 Json decode is not detected
+				Image string `json:"io.openshift.s2i.build.image"`
 			}
 		} `json:"config"`
 	}
 
 	templateTag struct {
-		Name string
-		Info registryInfo
+		Name                string
+		Info                registryInfo
+		DockerContentDigest string
 	}
 	templateImage struct {
 		Name string
@@ -65,6 +74,12 @@ type (
 	templateData struct {
 		Registry string
 		Images   []templateImage
+		Messages []msg
+	}
+
+	msg struct {
+		Level   string
+		Message string
 	}
 )
 
@@ -102,10 +117,13 @@ func init() {
 			s, _ := json.MarshalIndent(v, "", "  ")
 			return string(s)
 		},
+		"prefix": func(s string, prefix string) bool {
+			return strings.HasPrefix(s, prefix)
+		},
 	}
 	indexTemplate := template.Must(template.New("index.html").Funcs(fm).Parse(string(indexContent)))
 
-	Config = config{
+	c = config{
 		listen,
 		registry,
 		indexTemplate,
@@ -113,75 +131,165 @@ func init() {
 }
 
 func main() {
-	log.Printf("Listening on %s...", Config.listen)
+	log.Printf("Listening on %s...", c.listen)
 	http.HandleFunc("/", index)
-	log.Fatal(http.ListenAndServe(Config.listen, nil))
+	http.HandleFunc("/delete", deleteTag)
+	http.HandleFunc("/favicon.ico", favicon)
+	log.Fatal(http.ListenAndServe(c.listen, nil))
+}
+
+func favicon(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "image/x-icon")
+	w.Header().Set("Cache-Control", "public, max-age=7776000")
+	fmt.Fprint(w, "data:image/x-icon;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQEAYAAABPYyMiAAAABmJLR0T///////8JWPfcAAAACXBIWXMAAABIAAAASABGyWs+AAAAF0lEQVRIx2NgGAWjYBSMglEwCkbBSAcACBAAAeaR9cIAAAAASUVORK5CYII=\n")
 }
 
 func index(w http.ResponseWriter, r *http.Request) {
-	resp, err := http.Get(fmt.Sprintf("https://%s/v2/_catalog", Config.registry))
+	errs := make(chan error)
+	errHandlerDone := sync.WaitGroup{}
+	templateImages := []templateImage{}
+
+	msgList := []msg{}
+	errHandlerDone.Add(1)
+	go func() {
+		for err := range errs {
+			log.Println(err)
+			msgList = append(msgList, msg{"danger", fmt.Sprintf("%v", err)})
+		}
+		errHandlerDone.Done()
+	}()
+
+	defer func() {
+		close(errs)
+		errHandlerDone.Wait()
+		data := templateData{c.registry, templateImages, msgList}
+		if err := c.template.Execute(w, data); err != nil {
+			log.Println(err)
+		}
+	}()
+
+	// fetch catalog
+	resp, err := http.Get(fmt.Sprintf("https://%s/v2/_catalog", c.registry))
 	if err != nil {
-		fmt.Fprintf(w, "Unable to get repositories.")
-		log.Println(err)
+		errs <- err
 		return
 	}
-
 	catalog := registryCatalog{}
 	if err := json.NewDecoder(resp.Body).Decode(&catalog); err != nil {
-		fmt.Fprintf(w, "Unable to parse JSON.")
-		log.Println(err)
+		errs <- err
 		return
 	}
 
-	images := []templateImage{}
-	for _, imageName := range catalog.Repositories {
-		resp, err := http.Get(fmt.Sprintf("https://%s/v2/%s/tags/list", Config.registry, imageName))
-		if err != nil {
-			fmt.Fprintf(w, "Unable to get tags.")
-			log.Println(err)
-			return
-		}
-		ri := registryImage{}
-		if err := json.NewDecoder(resp.Body).Decode(&ri); err != nil {
-			fmt.Fprintf(w, "Unable to parse JSON.")
-			log.Println(err)
-			return
-		}
-
-		image := templateImage{
-			ri.Name,
-			[]templateTag{},
-		}
-		for _, tagName := range ri.Tags {
-			resp, err := http.Get(fmt.Sprintf("https://%s/v2/%s/manifests/%s", Config.registry, imageName, tagName))
-			if err != nil {
-				fmt.Fprintf(w, "Unable to load tag (%s) information.", tagName)
+	// fetch images
+	images := make(chan templateImage)
+	imageWait := sync.WaitGroup{}
+	for ri := range fetchRegistryImages(catalog.Repositories, errs) {
+		imageWait.Add(1)
+		go func(ri registryImage) {
+			image := templateImage{ri.Name, []templateTag{}}
+			for tagInfo := range fetchRegistryTags(ri, errs) {
+				tag := templateTag{tagInfo.Name, tagInfo.FirstHistory, tagInfo.DockerContentDigest}
+				image.Tags = append(image.Tags, tag)
 			}
-			tagInfo := registryTag{}
-			if err := json.NewDecoder(resp.Body).Decode(&tagInfo); err != nil {
-				fmt.Fprintf(w, "Unable to parse tags (%s) json.", tagName)
-				log.Println(err)
+			image.Tags = tagLimitSort(image.Tags)
+			images <- image
+			imageWait.Done()
+		}(ri)
+	}
+	go func() {
+		imageWait.Wait()
+		close(images)
+	}()
+	for image := range images {
+		templateImages = append(templateImages, image)
+	}
+
+}
+
+func fetchRegistryImages(images []string, errs chan error) chan registryImage {
+	out := make(chan registryImage)
+	go func() {
+		defer close(out)
+		for _, imageName := range images {
+			resp, err := http.Get(fmt.Sprintf("https://%s/v2/%s/tags/list", c.registry, imageName))
+			if err != nil {
+				errs <- err
 				return
 			}
-			json.Unmarshal([]byte(tagInfo.History[0]["v1Compatibility"]), &tagInfo.FirstHistory)
-
-			tag := templateTag{tagName, tagInfo.FirstHistory}
-			image.Tags = append(image.Tags, tag)
+			ri := registryImage{}
+			if err := json.NewDecoder(resp.Body).Decode(&ri); err != nil {
+				errs <- err
+				return
+			}
+			out <- ri
 		}
+	}()
+	return out
+}
 
-		image.Tags = tagLimitSort(image.Tags)
-		images = append(images, image)
-	}
+func fetchRegistryTags(ri registryImage, errs chan error) chan registryTag {
+	out := make(chan registryTag)
+	go func() {
+		defer close(out)
+		for _, tagName := range ri.Tags {
+			// get tag info
+			url := fmt.Sprintf("https://%s/v2/%s/manifests/%s", c.registry, ri.Name, tagName)
+			resp, err := http.Get(url)
+			if err != nil {
+				errs <- err
+				return
+			}
+			ti := registryTag{}
+			if err := json.NewDecoder(resp.Body).Decode(&ti); err != nil {
+				errs <- err
+				return
+			}
+			json.Unmarshal([]byte(ti.History[0]["v1Compatibility"]), &ti.FirstHistory)
 
-	data := templateData{
-		Config.registry,
-		images,
-	}
-	if err := Config.template.Execute(w, data); err != nil {
-		fmt.Fprintf(w, "Unable to write template:\n %v", err)
-		log.Println(err)
+			// get delete token
+			client := &http.Client{}
+			req, err := http.NewRequest("GET", url, nil)
+			if err != nil {
+				errs <- err
+				return
+			}
+			req.Header.Add("Accept", "application/vnd.docker.distribution.manifest.v2+json")
+			resp, err = client.Do(req)
+			if err != nil {
+				errs <- err
+				return
+			}
+			ti.DockerContentDigest = resp.Header["Docker-Content-Digest"][0]
+			ti.Name = tagName
+
+			out <- ti
+		}
+	}()
+	return out
+}
+
+func deleteTag(w http.ResponseWriter, r *http.Request) {
+	defer http.Redirect(w, r, "/", http.StatusFound)
+
+	_ = r.ParseForm()
+	image := r.Form.Get("Image")
+	digest := r.Form.Get("DockerContentDigest")
+	if image == "" || digest == "" {
+		log.Printf("No image to delete '%s/%s'.", image, digest)
 		return
 	}
+	log.Printf("Deleting image %s/%s.", image, digest)
+	req, err := http.NewRequest("DELETE", fmt.Sprintf("https://%s/v2/%s/manifests/%s", c.registry, image, digest), nil)
+	if err != nil {
+		log.Printf("Error while deleting image.")
+	}
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("Error while deleting image.")
+	}
+	log.Printf("resp: %v", resp)
+
 }
 
 func tagLimitSort(tags []templateTag) []templateTag {
@@ -195,8 +303,8 @@ func tagLimitSort(tags []templateTag) []templateTag {
 		}
 	}
 	sort.Slice(other, func(i int, j int) bool {
-		iTime, _ := time.Parse("Mon Jan 02 15:04:05 2006 -0700", other[i].Info.Config.Labels.CommitDate)
-		jTime, _ := time.Parse("Mon Jan 02 15:04:05 2006 -0700", other[j].Info.Config.Labels.CommitDate)
+		iTime, _ := time.Parse("Mon Jan 2 15:04:05 2006 -0700", other[i].Info.Config.Labels.CommitDate)
+		jTime, _ := time.Parse("Mon Jan 2 15:04:05 2006 -0700", other[j].Info.Config.Labels.CommitDate)
 		return iTime.Unix() > jTime.Unix()
 	})
 	if len(other) > 4 {
