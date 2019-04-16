@@ -244,7 +244,11 @@ func fetchRegistryTags(ri registryImage, errs chan error) chan registryTag {
 				errs <- err
 				return
 			}
-			json.Unmarshal([]byte(ti.History[0]["v1Compatibility"]), &ti.FirstHistory)
+			if len(ti.History) > 0 {
+				json.Unmarshal([]byte(ti.History[0]["v1Compatibility"]), &ti.FirstHistory)
+			} else {
+				continue
+			}
 
 			// get delete token
 			client := &http.Client{}
